@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>lanetvelo</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      background-color: #111;
+      color: white;
+      overflow: hidden;
+    }
+    #overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    #startBtn {
+      padding: 15px 30px;
+      font-size: 20px;
+      background-color: white;
+      color: black;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    #sliderLabel {
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+    #slider {
+      width: 300px;
+    }
+    #score {
+      font-size: 20px;
+      text-align: center;
+      margin-top: 10px;
+    }
+    #game {
+      position: relative;
+      width: 800px;
+      height: 250px;
+      margin: 20px auto;
+      background: linear-gradient(to top, #222, #444);
+      border: 3px solid #f5f5f5;
+      overflow: hidden;
+      box-shadow: 0 0 20px rgba(255,255,255,0.2);
+    }
+    #dino {
+      position: absolute;
+      bottom: 0;
+      left: 50px;
+      width: 50px;
+      height: 50px;
+      background-image: url('dino.gif');
+      background-size: cover;
+    }
+    .obstacle {
+      position: absolute;
+      bottom: 0;
+      border: 2px solid #555;
+    }
+    #restartBtn {
+      display: block;
+      margin: 0 auto 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #f5f5f5;
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #controls {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 2px solid #333;
+      padding: 10px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px #000;
+      z-index: 999;
+      width: 140px;
+    }
+    #controls button {
+      display: block;
+      margin: 6px 0;
+      padding: 8px 12px;
+      font-size: 14px;
+      width: 100%;
+      background-color: #111;
+      color: white;
+      border: 1px solid #eee;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #controls button:hover {
+      background-color: #333;
+    }
+    #scoreboard {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.8);
+      padding: 10px;
+      border: 1px solid #aaa;
+      border-radius: 6px;
+      font-size: 14px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    #scoreboard h3 {
+      margin: 0 0 5px;
+      font-size: 16px;
+      text-align: center;
+    }
+    #scoreboard ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    #scoreboard li {
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <div id="sliderLabel">Engel Yüksekliği: <span id="sliderValue">55</span> px</div>
+    <input type="range" id="slider" min="20" max="100" value="55" />
+    <button id="startBtn">Başla</button>
+  </div>
+
+  <div id="score">Skor: 0 | En Yüksek: 0 | Seviye: 1 | Oyuncu: ?</div>
+  <div id="game">
+    <div id="dino"></div>
+  </div>
+  <button id="restartBtn">Yeniden Başlat</button>
+
+  <div id="controls">
+    <button onclick="jump()">🆙 Zıpla (W)</button>
+    <button onclick="fastFall()">⬇️ İn (S)</button>
+    <button onclick="speedUp()">⚡ Hızlan (D)</button>
+    <button onclick="slowDown()">🐢 Yavaşla (A)</button>
+  </div>
+
+  <div id="scoreboard">
+    <h3>Skor Tablosu</h3>
+    <ul id="scoreList"></ul>
+  </div>
+
+  <audio id="jumpSound" src="funny-spring-jump-140378.mp3"></audio>
+  <audio id="fallSound" src="falling-game-character-352287.mp3"></audio>
+  <audio id="hitSound" src="crash.mp3"></audio>
+
+  <script>
+    let gravity = 0.5, velocity = 8, position = 0, isJumping = false, pause = false;
+    let score = 0, level = 1, speed = 5, obstacleIntervalTime = 2000, spawn;
+    let obstacleHeight = 55;
+    let highScore = localStorage.getItem("highScore") || 0;
+    let highPlayer = localStorage.getItem("highPlayer") || "?";
+    let currentPlayer = "?";
+
+    const dino = document.getElementById("dino");
+    const game = document.getElementById("game");
+    const scoreDisplay = document.getElementById("score");
+    const slider = document.getElementById("slider");
+    const sliderValue = document.getElementById("sliderValue");
+    const scoreList = document.getElementById("scoreList");
+
+    document.getElementById("startBtn").onclick = () => {
+      obstacleHeight = parseInt(slider.value);
+      currentPlayer = prompt("Adınızı girin:") || "Misafir";
+      document.getElementById("overlay").style.display = "none";
+      startGame();
+    };
+
+    slider.oninput = () => sliderValue.textContent = slider.value;
+
+    function startGame() {
+      updateScore();
+      document.addEventListener("keydown", handleKeys);
+      document.getElementById("restartBtn").onclick = () => location.reload();
+      spawn = setInterval(createObstacle, obstacleIntervalTime);
+      setInterval(updateJump, 20);
+    }
+
+    function updateScore() {
+      scoreDisplay.textContent = `Skor: ${score} | En Yüksek: ${highScore} (${highPlayer}) | Seviye: ${level} | Oyuncu: ${currentPlayer}`;
+    }
+
+    function updateScoreBoard(name, score) {
+      const item = document.createElement("li");
+      item.textContent = `${name}: ${score}`;
+      scoreList.appendChild(item);
+    }
+
+    function handleKeys(e) {
+      const key = e.key.toLowerCase();
+      if (key === "w") jump();
+      else if (key === "s") fastFall();
+      else if (key === "d") speedUp();
+      else if (key === "a") slowDown();
+    }
+
+    function jump() {
+      if (!isJumping && position === 0) {
+        velocity = 10;
+        isJumping = true;
+        document.getElementById("jumpSound").play();
+      }
+    }
+
+    function fastFall() {
+      if (isJumping && position > 0) {
+        velocity = -100;
+        document.getElementById("fallSound").play();
+      }
+    }
+
+    function speedUp() { speed++; }
+    function slowDown() { if (speed > 1) speed--; }
+
+    function updateJump() {
+      if (!isJumping || pause) return;
+      velocity += gravity;
+      position += velocity;
+      if (position >= 150 && !pause) {
+        pause = true;
+        velocity = -100;
+        setTimeout(() => {
+          pause = false;
+          velocity = -100;
+          document.getElementById("fallSound").play();
+        }, 500);
+        return;
+      }
+      if (position <= 0) {
+        position = 0;
+        velocity = 0;
+        isJumping = false;
+      }
+      dino.style.bottom = position + "px";
+    }
+
+    function createObstacle() {
+      const obs = document.createElement("div");
+      obs.classList.add("obstacle");
+      obs.style.height = obstacleHeight + "px";
+      obs.style.width = Math.floor(Math.random() * 30 + 20) + "px";
+      obs.style.backgroundColor = getRandomColor();
+      game.appendChild(obs);
+      let left = game.offsetWidth;
+      obs.style.left = left + "px";
+      const move = setInterval(() => {
+        if (left < -60) {
+          clearInterval(move);
+          obs.remove();
+          score++;
+          if (score > highScore) {
+            highScore = score;
+            highPlayer = currentPlayer;
+            localStorage.setItem("highScore", highScore);
+            localStorage.setItem("highPlayer", highPlayer);
+          }
+          if (score % 20 === 0) {
+            document.body.style.backgroundColor = getRandomColor();
+          }
+          if (score % 10 === 0) {
+            level++;
+            speed++;
+            if (obstacleIntervalTime > 800) {
+              obstacleIntervalTime -= 150;
+              clearInterval(spawn);
+              spawn = setInterval(createObstacle, obstacleIntervalTime);
+            }
+          }
+          updateScore();
+        } else if (left < 100 && left > 40 && position < obstacleHeight) {
+          document.getElementById("hitSound").play();
+          updateScoreBoard(currentPlayer, score);
+          alert(`💥 GAME OVER\nSkor: ${score}\nOyuncu: ${currentPlayer}\nEn Yüksek: ${highScore} (${highPlayer})`);
+          location.reload();
+        }
+        left -= speed;
+        obs.style.left = left + "px";
+      }, 20);
+    }
+
+    function getRandomColor() {
+      const colors = ["#fff", "#ddd", "#bbb", "#999", "#666", "#444", "#222"];
+      return colors[Math.floor(Math.random() * colors.length)];
+    }
+  </script>
+</body>
+</html>
